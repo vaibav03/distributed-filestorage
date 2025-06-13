@@ -4,7 +4,7 @@ import(
 )
 
 // Message has data sent over each transport bw 2 peers
-type Message struct{
+type RPC struct{
 	From net.Addr
 	Payload []byte
 }

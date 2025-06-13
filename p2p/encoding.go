@@ -5,21 +5,21 @@ import (
 )
 
 type Decoder interface {
-	Decode(io.Reader,any) error
+	Decode(io.Reader,*RPC) error
 }
 
 type GOBDecoder struct{
 
 }
 
-func (dec  GOBDecoder) Decode(r io.Reader, msg any) error {
+func (dec  GOBDecoder) Decode(r io.Reader, msg *RPC) error {
 	return gob.NewDecoder(r).Decode(msg)
 }
 
 type NOPDecoder struct{
 }
 
-func (dec NOPDecoder) Decode(r io.Reader, msg *Message) error{
+func (dec NOPDecoder) Decode(r io.Reader, msg *RPC) error{
 	buf := make([]byte,1024)
 
 	n,err := r.Read(buf)

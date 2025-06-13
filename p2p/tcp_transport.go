@@ -8,7 +8,7 @@ import (
 type TCPTransport struct {
 	TCPTransportOpts
 	listener      net.Listener
-	peers				 map[net.Addr]Peer
+	rpch chan RPC
 }
 
 //represents remote node over a established TCP Connection
@@ -25,18 +25,29 @@ func NewTCPPeer(conn net.Conn , outbound bool) *TCPPeer {
 		}
 }
 
+
+func (p *TCPPeer) Close() error{
+	return p.conn.Close()
+}
+
 type TCPTransportOpts struct{
 	ListenAddress string
 	HandshakeFunc func(any) error
 	Decoder Decoder
+	OnPeer func(Peer) error
 }
 
 func NewTCPTransport(opts TCPTransportOpts) *TCPTransport{
 	return &TCPTransport{
 		TCPTransportOpts: opts,
+		rpch : make(chan RPC),
 	}
 }
 
+// return read only channel for reading incoming msgs received from peers
+func (t *TCPTransport) Consume() <-chan RPC{
+	return t.rpch
+}
 func (t * TCPTransport) ListenAndAccept()  error{
 	var err error
 	t.listener, err = net.Listen("tcp", t.ListenAddress)
@@ -64,6 +75,13 @@ func (t *TCPTransport) startAcceptLoop(){
 
 
 func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
+	var err error
+	defer func(){
+		fmt.Println("dropping peer conn: %s \n",err)
+		conn.Close()
+	}()
+
+
 	peer := NewTCPPeer(conn, true) 
 
 	if err := t.HandshakeFunc(peer); err!=nil{
@@ -72,22 +90,28 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 		return 
 	}
 
-	buf := make([]byte, 1024) // Buffer size can be adjusted as needed
+	if t.OnPeer != nil {
+		if err := t.OnPeer(peer); err!=nil {
+			return 
+		}
+	}
 
+	rpc := &RPC{}
 
 	for{
-		n, err := conn.Read(buf)
-		if err != nil {
-			fmt.Printf("Error reading from connection %s: %s\n", conn.RemoteAddr(), err)
+		 err := t.Decoder.Decode(conn,rpc); 
+		 if err == net.ErrClosed{
+			return 
+		 }
+
+		 if err!=nil{
+			fmt.Println("TCP Read Error:", err)
 			conn.Close()
-			return
-		}
-		
-		if n == 0 {
-			fmt.Printf("Connection %s closed by peer\n", conn.RemoteAddr())
-			conn.Close()
-			return
-		}
-		fmt.Printf("Received message from %s: %v\n", conn.RemoteAddr(), buf[:n])
+		 }
+		 rpc.From = conn.RemoteAddr()
+		 t.rpch <- *rpc
+
+		 fmt.Println("Received message from", conn.RemoteAddr(), ":", string(rpc.Payload))
 	}
+	
 }
