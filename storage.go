@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -17,11 +18,12 @@ type PathKey struct{
 	PathName string
 	FileName string
 }
+
 func DefaultPathTransformFunc(key string) PathKey{
 	return PathKey{
 		PathName : key,
 		FileName : key,
-	}
+	} 
 }
 func CASPathTransformFunc(key string) PathKey {
 	hash := sha1.Sum([]byte(key))
@@ -131,6 +133,7 @@ func (s PathKey) FirstPathName() string {
 	}
 }
 
+
 func (s *Store) Delete(key string) error{
 	pathKey := s.PathTransformFunc(key)
 	defer func(){
@@ -146,5 +149,13 @@ func (s *Store) Has( key string) bool{
 fullPathWithRoot := s.Root + "/" + Pathkey.FullPath()
 	_,err := os.Stat(fullPathWithRoot)
 
-	return err == nil
+	return !errors.Is(err,os.ErrNotExist)
+}
+
+func (s *Store) Clear () error{
+	return os.RemoveAll(s.Root)
+}
+
+func (s *Store) Write(key string, r io.Reader) error{
+	return s.WriteStream(key,r)
 }

@@ -6,12 +6,25 @@ import (
 	"log"
 	"testing"
 )
+ 
+func  newStore() *Store{
+	opts := StoreOpts{
+		PathTransformFunc: CASPathTransformFunc,
+	}
+	return NewStore(opts)
+}
+func teardown(t *testing.T, s *Store){
+	if err:= s.Clear(); err!=nil{
+		t.Error(err)
+	}
+}
 
 func TestStore(t *testing.T){
 		opts := StoreOpts{
 			PathTransformFunc: CASPathTransformFunc,
 		}
 		s:= NewStore(opts)
+		defer teardown(t,s)
 		key := "momsspecials"
 		data := []byte("some jpg bytes")
 
