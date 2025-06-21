@@ -7,6 +7,13 @@ import (
 	"net"
 )
 
+type TCPTransportOpts struct{
+	ListenAddress string
+	HandshakeFunc func(any) error
+	Decoder Decoder
+	OnPeer func(Peer) error
+}
+
 type TCPTransport struct {
 	TCPTransportOpts
 	listener      net.Listener
@@ -32,17 +39,10 @@ func( t *TCPTransport) Close() error{
 }
 
 
-func (p *TCPPeer) Close() error{
-	return p.conn.Close()
+func(p *TCPPeer) Send(b []byte) error{
+	_,err := p.conn.Write(b)
+	return err
 }
-
-type TCPTransportOpts struct{
-	ListenAddress string
-	HandshakeFunc func(any) error
-	Decoder Decoder
-	OnPeer func(Peer) error
-}
-
 func NewTCPTransport(opts TCPTransportOpts) *TCPTransport{
 	return &TCPTransport{
 		TCPTransportOpts: opts,
@@ -101,7 +101,7 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 	}
 
 	if t.OnPeer != nil {
-		if err := t.OnPeer(peer); err!=nil {
+		if err := t.OnPeer; err!=nil {
 			return 
 		}
 	}
@@ -136,5 +136,4 @@ func (t *TCPTransport) Dial (addr string) error{
 	go t.handleConn(conn,true)
 
 	return nil
-
 } 
