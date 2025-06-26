@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sync"
+	"time"
 )
 
 type TCPTransportOpts struct{
 	ListenAddress string
-	HandshakeFunc func(any) error
+	HandshakeFunc Handshakefunc
 	Decoder Decoder
 	OnPeer func(Peer) error
 }
@@ -25,18 +27,54 @@ type TCPTransport struct {
 type TCPPeer struct{
 	conn net.Conn 
 	outbound bool
+	wg  *sync.WaitGroup
 }
 
 func NewTCPPeer(conn net.Conn , outbound bool) *TCPPeer {
 		return &TCPPeer{
 		conn : conn,
 		outbound : outbound,
+		wg : &sync.WaitGroup{},
 		}
 }
 
 func( t *TCPTransport) Close() error{
 	return t.listener.Close();
 }
+
+func (p *TCPPeer) Read(b []byte) (n int, err error) {
+	return p.conn.Read(b)
+}
+
+func (p *TCPPeer) Write(b []byte) (n int, err error) {
+	return p.conn.Write(b)
+}
+
+
+func (p *TCPPeer) Close() error {
+	return p.conn.Close()
+}
+
+func (p *TCPPeer) LocalAddr() net.Addr {
+	return p.conn.LocalAddr()
+}
+
+func (p *TCPPeer) RemoteAddr() net.Addr {
+	return p.conn.RemoteAddr()
+}
+
+func (p *TCPPeer) SetDeadline(t time.Time) error {
+	return p.conn.SetDeadline(t)
+}
+
+func (p *TCPPeer) SetReadDeadline(t time.Time) error {
+	return p.conn.SetReadDeadline(t)
+}
+
+func (p *TCPPeer) SetWriteDeadline(t time.Time) error {
+	return p.conn.SetWriteDeadline(t)
+}
+
 
 
 func(p *TCPPeer) Send(b []byte) error{
@@ -87,12 +125,13 @@ func (t *TCPTransport) startAcceptLoop(){
 func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 	var err error
 	defer func(){
-		fmt.Println("dropping peer conn: %s \n",err)
+		fmt.Println("dropping peer conn: ",err)
 		conn.Close()
 	}()
 
 
 	peer := NewTCPPeer(conn, outbound) 
+	
 
 	if err := t.HandshakeFunc(peer); err!=nil{
 			fmt.Printf("Handshake failed for peer %s: %s\n", conn.RemoteAddr(), err)
@@ -100,30 +139,36 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 		return 
 	}
 
-	if t.OnPeer != nil {
-		if err := t.OnPeer; err!=nil {
+		fmt.Println("Handshake successful for peer ",t.OnPeer)
+		if t.OnPeer != nil {
+		if err = t.OnPeer(peer); err != nil {
+			fmt.Printf("OnPeer callback failed for peer %s: %s\n", conn.RemoteAddr(), err)
 			return 
 		}
 	}
 
-	rpc := &RPC{}
+	rpc := RPC{}
 
 	for{
-		 err := t.Decoder.Decode(conn,rpc); 
-		 if err == net.ErrClosed{
-			return 
-		 }
+		fmt.Println("Waiting for RPC from", conn.RemoteAddr())
+		 err := t.Decoder.Decode(conn,&rpc); 
 
 		 if err!=nil{
 			fmt.Println("TCP Read Error:", err)
 			conn.Close()
+			break
 		 }
-		 rpc.From = conn.RemoteAddr()
-		 t.rpch <- *rpc
 
+		 fmt.Println("Decoded RPC:", rpc)
+
+		 
+		 peer.wg.Add(1) 
+		 rpc.From = conn.RemoteAddr()
+		 t.rpch <- rpc
+		 fmt.Println("Wait till stream is done")
+		 peer.wg.Wait()
 		 fmt.Println("Received message from", conn.RemoteAddr(), ":", string(rpc.Payload))
 	}
-	
 }
 
 
@@ -132,7 +177,6 @@ func (t *TCPTransport) Dial (addr string) error{
 	if err!=nil{
 		return err
 	}
-
 	go t.handleConn(conn,true)
 
 	return nil

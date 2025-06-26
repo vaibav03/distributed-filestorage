@@ -31,5 +31,4 @@ func (dec NOPDecoder) Decode(r io.Reader, msg *RPC) error{
 	msg.Payload = buf[:n]
 
 	return nil
-
 }

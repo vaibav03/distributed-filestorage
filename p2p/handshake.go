@@ -1,8 +1,8 @@
 package p2p
 
 
-type Handshakefunc func(any) error
+type Handshakefunc func(Peer) error
 
-func NOPHandShakeFunc(peer any) error {
+func NOPHandShakeFunc(peer Peer) error {
 return nil
 }

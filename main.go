@@ -17,15 +17,17 @@ func makeServer (listenAddr string, nodes ...string) *FileServer{
 	}
 	tcptransport := p2p.NewTCPTransport(tcptransportOpts)
 
-  fileServerOpts := FileServerOpts{
-		StorageRoot : strings.Split(listenAddr, ":")[1] + "network",
-		PathTransformFunc : CASPathTransformFunc,
-		Transport : *tcptransport,
-		BootstrapNodes: nodes,
+	fileServerOpts := FileServerOpts{
+		StorageRoot:       strings.Split(listenAddr, ":")[1] + "network",
+		PathTransformFunc: CASPathTransformFunc,
+		Transport:         tcptransport,
+		BootstrapNodes:    nodes,
 	}
 	s := NewFileServer(fileServerOpts)
 
+	
 	tcptransport.OnPeer = s.OnPeer
+
 	return s
 }
 
@@ -34,9 +36,11 @@ func main(){
 	s2 := makeServer(":4000",":3000")
 
 	go func() {log.Fatal(s1.Start()) }()
-	time.Sleep(time.Second)
+	time.Sleep(2*time.Second)
 	go s2.Start()
-	time.Sleep(time.Second)
+	time.Sleep(2*time.Second)
+
+	log.Println("started 1 and 2")
 
 	data := bytes.NewReader([]byte("my big data file"))
 	err := s2.StoreData("my private data",data)

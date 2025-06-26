@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"sync"
+//	"time"
 
 	"github.com/vaibav03/distributed-filestorage/p2p"
 )
@@ -15,17 +16,32 @@ type Payload struct{
 	Data []byte
 }
 
-func(s *FileServer) broadcast(p *Payload) error{
+type Message struct{
+	From string
+	Payload any
+}
+
+func(s *FileServer) broadcast(msg *Message) error{
 	fmt.Println("broadcast")
 	peers := []io.Writer{}
+	fmt.Println("peers in broadcast ",s.peers)
 	for _,peer := range s.peers{
 		peers = append(peers,peer)
 	}
 	mw := io.MultiWriter(peers...)
-	return gob.NewEncoder(mw).Encode(p)
+	return gob.NewEncoder(mw).Encode(msg)
 }
+
+func (s *FileServer) handleMessage(msg *Message) error{
+	switch v:=msg.Payload.(type) {
+	case *Message:
+		fmt.Println("received data %v ", v)
+	}
+	return nil
+}
+
 func (s *FileServer) StoreData(key string, r io.Reader) error{
-  fmt.Println("store data")
+   
 	buf := new(bytes.Buffer)
 	tee := io.TeeReader(r,buf)
 
@@ -41,12 +57,36 @@ func (s *FileServer) StoreData(key string, r io.Reader) error{
 		Data : buf.Bytes(),
 	}
 
-	return s.broadcast(p)
+	s.broadcast(&Message{
+		From:    "todo",
+		Payload: p.Data,
+	})
+	fmt.Println("store data")
+	return nil
+	// time.Sleep(2 * time.Second) // Simulate some processing delay
+  // buf := new(bytes.Buffer)
+	// msg := Message{
+	// 	Payload: []byte("storagekey"),
+	// }
+	// if err := gob.NewEncoder((buf)).Encode(&msg); err != nil {
+	// 	return fmt.Errorf("error encoding message: %w", err)
+	// }
+
+	// log.Println(s.peers)
+	// for _,peer := range s.peers {
+	// 	log.Printf("sending data to peer %s", peer)
+	// 	if err := peer.Send(buf.Bytes()); err != nil {
+	// 		log.Printf("error sending data to peer %s: %v", peer.RemoteAddr(), err)
+	// 		continue
+	// 	}
+	// 	log.Printf("data sent to peer %s", peer.RemoteAddr())
+	// } 
+	// return nil
 }
 type FileServerOpts struct {
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
-	Transport         p2p.TCPTransport
+	Transport         *p2p.TCPTransport
 	BootstrapNodes 		[]string
 }
 
@@ -68,15 +108,14 @@ func NewFileServer(opts FileServerOpts) *FileServer {
 		store: NewStore(storeOpts),
 		quitch : make(chan struct{}),
 		peers : make(map[string]p2p.Peer),
-
 	}
 }
 
 func ( s *FileServer) OnPeer(p p2p.Peer) error{
 	 s.peerLock.Lock()
 	 defer s.peerLock.Unlock()
+		log.Println("inserting in map  ",p.RemoteAddr())
 	 s.peers[p.RemoteAddr().String()] = p
-	 log.Println("connected with remote  ",p.RemoteAddr())
 	 return nil
 }
 
@@ -86,7 +125,7 @@ func (s *FileServer) Stop() {
 }
 
 func (s *FileServer) loop(){
-	fmt.Println("into loop")
+	fmt.Println("into loop fileserver")
 
 	defer func(){
 		log.Println("file server stopped user quit action")
@@ -95,16 +134,24 @@ func (s *FileServer) loop(){
 	
 	for{
 		select{
-		case msg := <-s.Transport.Consume():
-			var p Payload
-			if err:=gob.NewDecoder((bytes.NewReader(msg.Payload))).Decode(&p); err!=nil{
+		case rpc := <-s.Transport.Consume():
+			var msg Message
+			if err:=gob.NewDecoder((bytes.NewReader(rpc.Payload))).Decode(&msg); err!=nil{
 				log.Fatal(err)
 			}
-			fmt.Printf("Payload ...   %+v\n",p)
-			// Store the received data
-			if err := s.store.Write(p.Key, bytes.NewReader(p.Data)); err != nil {
-				log.Printf("failed to store received data: %v", err)
+			peer,ok := s.peers[rpc.From.String()]
+			if !ok{
+				log.Println("peer not found in map ",rpc.From)
 			}
+			b := make([]byte,1024)
+			if _,err := peer.Read(b); err != nil {
+				panic(err)
+			}
+
+			// if err:= s.handleMessage(&p); err!=nil{
+			// 	log.Println("error handling message: ", err)
+			// }
+			// fmt.Println(string(msg.Payload))
 		case <-s.quitch:
 		 return
 		}
@@ -115,10 +162,12 @@ func (s *FileServer) bootstrapNetwork() error{
 	for _,addr := range s.BootstrapNodes{
 		fmt.Println("bootstrapping  ",addr)
 		 go func(addr string){
+			fmt.Println("dialing ",addr)
 			if err:= s.Transport.Dial(addr); err!=nil{
 				log.Printf("dial error : %s ",err)
 			}
 		 }(addr)
+
 	}
 	return nil
 }
