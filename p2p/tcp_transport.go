@@ -27,14 +27,14 @@ type TCPTransport struct {
 type TCPPeer struct{
 	conn net.Conn 
 	outbound bool
-	wg  *sync.WaitGroup
+	Wg  *sync.WaitGroup
 }
 
 func NewTCPPeer(conn net.Conn , outbound bool) *TCPPeer {
 		return &TCPPeer{
 		conn : conn,
 		outbound : outbound,
-		wg : &sync.WaitGroup{},
+		Wg : &sync.WaitGroup{},
 		}
 }
 
@@ -67,16 +67,15 @@ func (p *TCPPeer) SetDeadline(t time.Time) error {
 	return p.conn.SetDeadline(t)
 }
 
+
 func (p *TCPPeer) SetReadDeadline(t time.Time) error {
 	return p.conn.SetReadDeadline(t)
 }
 
+
 func (p *TCPPeer) SetWriteDeadline(t time.Time) error {
 	return p.conn.SetWriteDeadline(t)
 }
-
-
-
 func(p *TCPPeer) Send(b []byte) error{
 	_,err := p.conn.Write(b)
 	return err
@@ -159,15 +158,15 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 			break
 		 }
 
-		 fmt.Println("Decoded RPC:", rpc)
+		 fmt.Println("Decoded RPC:", string(rpc.Payload))
 
 		 
-		 peer.wg.Add(1) 
-		 rpc.From = conn.RemoteAddr()
-		 t.rpch <- rpc
+		 peer.Wg.Add(1) 
+		 rpc.From = conn.RemoteAddr().String()
 		 fmt.Println("Wait till stream is done")
-		 peer.wg.Wait()
-		 fmt.Println("Received message from", conn.RemoteAddr(), ":", string(rpc.Payload))
+		 t.rpch <- rpc
+		 peer.Wg.Wait()
+		 fmt.Println("Stream done continuing normal")
 	}
 }
 
