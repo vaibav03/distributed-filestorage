@@ -6,12 +6,14 @@ import "net"
 type Peer interface{
 	net.Conn
 	Send([]byte) error
+	CloseStream() 
 }
 
 
 // Transport is an interface that defines the methods for a transport layer in a peer-to-peer network.
 // It allows for sending and receiving messages between peers. (TCP,UDP,WEBSOCKETS,....)
 type Transport interface {
+	Addr() string
 	Dial(string) error
 	ListenAndAccept() error
 	Consume() <-chan RPC
