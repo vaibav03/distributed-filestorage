@@ -14,6 +14,8 @@ import (
 
 const defaultRootFolderName = "ggnetwork"
 
+
+
 type PathKey struct{
 	PathName string
 	FileName string
@@ -54,6 +56,8 @@ func (p PathKey) FullPath() string{
 type StoreOpts struct {
 	// root contains all folders/files of system
 	Root string
+	// ID is unique identifier for this store instance
+	ID string
 	PathTransformFunc PathTransformFunc 
 }
 
@@ -69,6 +73,9 @@ func NewStore(opts StoreOpts) *Store {
 		opts.Root = defaultRootFolderName
 	}
 
+	if len(opts.ID) == 0{
+		opts.ID = generateID()
+	}
 	return &Store{
 		StoreOpts: opts,
 	}
@@ -89,7 +96,7 @@ func (s *Store) Read(key string) (int64,io.Reader,error) {
 
 func ( s *Store) readStream(key string) (int64,io.ReadCloser,error){
 	pathKey := s.PathTransformFunc(key)
-	fullPathWithRoot := s.Root + "/" + pathKey.FullPath()
+	fullPathWithRoot := s.Root + "/" + s.ID + "/" + pathKey.FullPath()
 
   file,err := os.Open(fullPathWithRoot)
 
@@ -156,14 +163,14 @@ func (s *Store) WriteDecrypt (encKey []byte,key string, r io.Reader) (int64,erro
 
 func (s *Store) openFileForWriting(key string) (*os.File,error){
 		pathKey := s.PathTransformFunc(key)
-	pathNamewithRoot := s.Root + "/" + pathKey.PathName
+	pathNamewithRoot := s.Root + "/" + s.ID + "/" + pathKey.PathName
 
 	if err := os.MkdirAll(pathNamewithRoot,os.ModePerm); err != nil {
 		return nil,err
 	}
 
 	fullPath := pathKey.FullPath()
-	fullPathWithRoot := s.Root + "/" + fullPath 
+	fullPathWithRoot := s.Root + "/" + s.ID + "/" + fullPath 
 
 	return os.Create(fullPathWithRoot)
 }

@@ -36,7 +36,7 @@ func (s *FileServer) Get(key string)  (io.Reader,error){
 	 fmt.Printf("[%s] dont have file (%s) locally, fetching from network... \n",s.Transport.Addr(),key)
 	 msg := Message{
 		Payload : MessageGetFile{
-			Key : key,
+			Key : hashKey(key),
 		},
 	 }
 	 gob.Register(MessageGetFile{})
@@ -162,7 +162,7 @@ func (s *FileServer) StoreData(key string, r io.Reader) error{
 	}
 	msg := Message{
 		Payload: &MessageStoreFile{
-			PathKey: key,
+			PathKey: hashKey(key),
 			Size: n+16,
 		},
 	}
@@ -252,26 +252,6 @@ func (s *FileServer) loop(){
 				log.Println("error handling message: ", err) 
 			}
 
-			
-			// peer,ok := s.peers[rpc.From] 
-			// if !ok{
-			// 	log.Println("peer not found in map ",rpc.From)
-			// }
-
-			// b := make([]byte,1024)
-			// if _,err := peer.Read(b); err != nil {
-			// 	panic(err)
-			// }
-			// fmt.Printf("recv: %s",msg)
-
-			// fmt.Printf("recv: %s",string(b))
-
-			// peer.(*p2p.TCPPeer).Wg.Done() // signal that the stream is done
-
-			// if err:= s.handleMessage(&p); err!=nil{
-			// 	log.Println("error handling message: ", err)
-			// }
-			// fmt.Println(string(msg.Payload))
 		case <-s.quitch:
 		 return
 		}
