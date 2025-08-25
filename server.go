@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"log"
 	"sync"
 	"time"
+
 	"github.com/vaibav03/distributed-filestorage/p2p"
 )
 type Payload struct{
@@ -27,7 +29,8 @@ type MessageGetFile struct {
 func (s *FileServer) Get(key string)  (io.Reader,error){
 	 if s.store.Has(key) {
 		fmt.Printf("[%s] serving file (%s) from local disk \n",s.Transport.Addr(),key)
-		return s.store.Read(key)
+		_,r,err := s.store.Read(key)
+		return r,err
 	 }
 
 	 fmt.Printf("[%s] dont have file (%s) locally, fetching from network... \n",s.Transport.Addr(),key)
@@ -43,24 +46,22 @@ func (s *FileServer) Get(key string)  (io.Reader,error){
 	 }
 
 	 time.Sleep(time.Millisecond * 500) 
-	 fmt.Printf(" [%s] Before loop",s.Transport.Addr())
 	 for _,peer := range s.peers{
-		 fileBuffer := new(bytes.Buffer)
-		 n,err := io.CopyN(fileBuffer,peer,16)
-		 if err!=nil{
-			return nil ,err
-		 }
-		 	 fmt.Println(" [%s] After loop",s.Transport.Addr())
+		var fileSize int64 
+		binary.Read(peer,binary.LittleEndian,&fileSize) // read the size of the file
+			fmt.Println("file size received from peer: ",fileSize)
+
+	n, err := s.store.WriteDecrypt(s.EncKey,key,io.LimitReader(peer,fileSize))
+
+	if err != nil {
+			return nil, fmt.Errorf("error writing file to store: %w", err)
+		}
 
 		 fmt.Printf("[%s] received [%d] bytes over the network from (%s) \n ",s.Transport.Addr(),n,peer.RemoteAddr())
-		 fmt.Println(fileBuffer.String())
-
 		 peer.CloseStream()
 	 }
-	 select{}
-
-	 return nil,nil
-
+	 _,r,err :=  s.store.Read(key)
+	 return r,err
 }
 func(s *FileServer) stream(msg *Message) error{
 	peers := []io.Writer{}
@@ -110,16 +111,23 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	} 
 	fmt.Printf("[%s] serving file  (%s) over the network \n",s.Transport.Addr(), msg.Key)
 
-	r,err := s.store.Read(msg.Key)
+	fileSize,r,err := s.store.Read(msg.Key)
 	if err != nil {
 		return fmt.Errorf("error reading file from store: %w", err)
 	}
+
+	 rc,ok :=  r.(io.ReadCloser)
+	 if ok{
+		fmt.Println("received a ReadCloser, closing it after use")
+		defer rc.Close()
+	 }
+
 	peer,ok := s.peers[from]
 	if !ok {
 		return fmt.Errorf("peer %s not found", from)
 	}
 	peer.Send([]byte{p2p.IncomingStream}) // signal that this is a stream
-
+	binary.Write(peer, binary.LittleEndian, fileSize) // send the size of the file
 	n,err := io.Copy(peer,r)
 	if err != nil {
 		return fmt.Errorf("error sending file to peer: %w", err)
@@ -155,7 +163,7 @@ func (s *FileServer) StoreData(key string, r io.Reader) error{
 	msg := Message{
 		Payload: &MessageStoreFile{
 			PathKey: key,
-			Size: n,
+			Size: n+16,
 		},
 	}
 
@@ -164,17 +172,26 @@ func (s *FileServer) StoreData(key string, r io.Reader) error{
 		}
 
 		time.Sleep(time.Millisecond*5)
-		for _,peer := range s.peers {
-			peer.Send([]byte{p2p.IncomingStream}) // signal that this is a stream
-		n,err :=  io.Copy(peer,filebuf)
-		if err !=nil{
+
+		peers := []io.Writer{}
+
+		for _,peer := range s.peers{
+			peers = append(peers,peer)
+		}
+	  mw := io.MultiWriter(peers...)
+    mw.Write([]byte{p2p.IncomingStream})
+		n,err = copyEncrypt(s.EncKey, filebuf, mw)
+		
+		if err!=nil{
 			return err
 		}
-		fmt.Println("received and written bytes to disk: ",n)
-	}
+		// n,err :=  io.Copy(peer,filebuf)
+		 fmt.Printf(" [%s] received and written (%d) bytes to disk: \n",s.Transport.Addr(),n)
+	
 	return nil
 }
 type FileServerOpts struct {
+	EncKey []byte
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         *p2p.TCPTransport

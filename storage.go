@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	// "bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
@@ -75,53 +75,34 @@ func NewStore(opts StoreOpts) *Store {
 }
 
 func (s *Store) WriteStream(key string, r io.Reader) (int64,error) {
-	pathKey := s.PathTransformFunc(key)
-	pathNamewithRoot := s.Root + "/" + pathKey.PathName
-
-	if err := os.MkdirAll(pathNamewithRoot,os.ModePerm); err != nil {
-		return 0,err
-	}
-
-	fullPath := pathKey.FullPath()
-	fullPathWithRoot := s.Root + "/" + fullPath 
-
-	f,err := os.Create(fullPathWithRoot)
+	f,err := s.openFileForWriting(key)
 	
 	if err != nil {
 		return 0,err
 	}
-	defer f.Close()
-	n,err := io.Copy(f, r)
-	if err != nil {
-		return 0,err
-	}
-
-	log.Printf("Wrote %d bytes to %s", n, fullPathWithRoot)
-	return n,nil
+	return io.Copy(f,r)
 }
 
-func (s *Store) Read(key string) (io.Reader,error) {
-	f,err := s.readStream(key)
-	if err != nil {
-		return nil,err
-	}
-	defer f.Close()
-	buf := new(bytes.Buffer)
-	_,err = io.Copy(buf,f)
-	return buf,err 
-	
-
+func (s *Store) Read(key string) (int64,io.Reader,error) {
+	return s.readStream(key)
 }
 
-func ( s *Store) readStream(key string) (io.ReadCloser,error){
+func ( s *Store) readStream(key string) (int64,io.ReadCloser,error){
 	pathKey := s.PathTransformFunc(key)
 	fullPathWithRoot := s.Root + "/" + pathKey.FullPath()
-  f,err := os.Open(fullPathWithRoot)
 
-	if err!=nil {
-		return nil,err
+  file,err := os.Open(fullPathWithRoot)
+
+	if err!=nil{
+		return 0,nil,err
 	}
-	return f,nil
+
+	fi,err := file.Stat()
+	if err!=nil{
+		return 0,nil,err
+	}
+
+	return fi.Size(),file,nil
 }
 
 func (s PathKey) FirstPathName() string {
@@ -158,4 +139,31 @@ func (s *Store) Clear () error{
 
 func (s *Store) Write(key string, r io.Reader) (int64,error){
 	return s.WriteStream(key,r)
+}
+
+func (s *Store) WriteDecrypt (encKey []byte,key string, r io.Reader) (int64,error) {
+	f,err := s.openFileForWriting(key)
+	
+	if err != nil {
+		return 0,err
+	}
+
+	n,err := copyDecrypt(encKey,r,f)
+	return n,err
+} 
+ 
+
+
+func (s *Store) openFileForWriting(key string) (*os.File,error){
+		pathKey := s.PathTransformFunc(key)
+	pathNamewithRoot := s.Root + "/" + pathKey.PathName
+
+	if err := os.MkdirAll(pathNamewithRoot,os.ModePerm); err != nil {
+		return nil,err
+	}
+
+	fullPath := pathKey.FullPath()
+	fullPathWithRoot := s.Root + "/" + fullPath 
+
+	return os.Create(fullPathWithRoot)
 }

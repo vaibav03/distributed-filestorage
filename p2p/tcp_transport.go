@@ -170,7 +170,6 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 			peer.wg.Add(1)
 			fmt.Printf("[%s] incoming stream, waiting... \n ", conn.RemoteAddr())
 			peer.wg.Wait()
-
 			fmt.Printf(" [%s] STream closed, resuming read stream, waiting ... \n", conn.RemoteAddr())
 			continue 
 		}
