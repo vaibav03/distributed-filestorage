@@ -14,8 +14,6 @@ import (
 
 const defaultRootFolderName = "ggnetwork"
 
-
-
 type PathKey struct{
 	PathName string
 	FileName string
@@ -49,15 +47,13 @@ func CASPathTransformFunc(key string) PathKey {
 type PathTransformFunc func(string) PathKey
 
 func (p PathKey) FullPath() string{
-	return fmt.Sprintf("%s%s",p.PathName,p.FileName)
+	return fmt.Sprintf("%s/%s",p.PathName,p.FileName)
 }
 
 
 type StoreOpts struct {
 	// root contains all folders/files of system
 	Root string
-	// ID is unique identifier for this store instance
-	ID string
 	PathTransformFunc PathTransformFunc 
 }
 
@@ -73,16 +69,14 @@ func NewStore(opts StoreOpts) *Store {
 		opts.Root = defaultRootFolderName
 	}
 
-	if len(opts.ID) == 0{
-		opts.ID = generateID()
-	}
+	
 	return &Store{
 		StoreOpts: opts,
 	}
 }
 
-func (s *Store) WriteStream(key string, r io.Reader) (int64,error) {
-	f,err := s.openFileForWriting(key)
+func (s *Store) WriteStream(id string ,key string, r io.Reader) (int64,error) {
+	f,err := s.openFileForWriting(id,key)
 	
 	if err != nil {
 		return 0,err
@@ -90,13 +84,13 @@ func (s *Store) WriteStream(key string, r io.Reader) (int64,error) {
 	return io.Copy(f,r)
 }
 
-func (s *Store) Read(key string) (int64,io.Reader,error) {
-	return s.readStream(key)
+func (s *Store) Read(id string ,key string) (int64,io.Reader,error) {
+	return s.readStream(id,key)
 }
 
-func ( s *Store) readStream(key string) (int64,io.ReadCloser,error){
+func ( s *Store) readStream(id string,key string) (int64,io.ReadCloser,error){
 	pathKey := s.PathTransformFunc(key)
-	fullPathWithRoot := s.Root + "/" + s.ID + "/" + pathKey.FullPath()
+	fullPathWithRoot := s.Root  + id + "/" + pathKey.FullPath()
 
   file,err := os.Open(fullPathWithRoot)
 
@@ -122,19 +116,19 @@ func (s PathKey) FirstPathName() string {
 }
 
 
-func (s *Store) Delete(key string) error{
+func (s *Store) Delete(ID string, key string) error{
 	pathKey := s.PathTransformFunc(key)
 	defer func(){
-		log.Printf("deleted %s",pathKey.FullPath())
+		log.Printf("deleted %s",s.Root + ID + "/" + pathKey.FullPath())
 	}()
-
-	return os.RemoveAll(pathKey.FirstPathName()); 
+	fullPathWithRoot := s.Root + ID + "/" + pathKey.FullPath()
+	return os.RemoveAll(fullPathWithRoot); 
 }
 
 
-func (s *Store) Has( key string) bool{
-	Pathkey := CASPathTransformFunc(key)
-fullPathWithRoot := s.Root + "/" + Pathkey.FullPath()
+func (s *Store) Has(id string, key string) bool{
+	Pathkey := s.PathTransformFunc(key)
+fullPathWithRoot := s.Root + id +  "/" + Pathkey.FullPath()
 	_,err := os.Stat(fullPathWithRoot)
 
 	return !errors.Is(err,os.ErrNotExist)
@@ -144,33 +138,36 @@ func (s *Store) Clear () error{
 	return os.RemoveAll(s.Root)
 }
 
-func (s *Store) Write(key string, r io.Reader) (int64,error){
-	return s.WriteStream(key,r)
+func (s *Store) Write(id string ,key string, r io.Reader) (int64,error){
+	return s.WriteStream(id,key,r)
 }
 
-func (s *Store) WriteDecrypt (encKey []byte,key string, r io.Reader) (int64,error) {
-	f,err := s.openFileForWriting(key)
+func (s *Store) WriteDecrypt (id string ,encKey []byte,key string, r io.Reader) (int64,error) {
+	f,err := s.openFileForWriting(id,key)
 	
 	if err != nil {
 		return 0,err
 	}
 
 	n,err := copyDecrypt(encKey,r,f)
-	return n,err
+	return int64(n),err
 } 
  
 
 
-func (s *Store) openFileForWriting(key string) (*os.File,error){
+func (s *Store) openFileForWriting(id string, key string) (*os.File,error){
 		pathKey := s.PathTransformFunc(key)
-	pathNamewithRoot := s.Root + "/" + s.ID + "/" + pathKey.PathName
+	pathNamewithRoot := s.Root + id + "/" + pathKey.PathName
+	fmt.Println("creating directories: ", pathNamewithRoot)
 
 	if err := os.MkdirAll(pathNamewithRoot,os.ModePerm); err != nil {
 		return nil,err
 	}
 
 	fullPath := pathKey.FullPath()
-	fullPathWithRoot := s.Root + "/" + s.ID + "/" + fullPath 
+	fullPathWithRoot := s.Root + id + "/" + fullPath 
+
+	fmt.Println("opening file for writing: ", fullPathWithRoot)
 
 	return os.Create(fullPathWithRoot)
 }
